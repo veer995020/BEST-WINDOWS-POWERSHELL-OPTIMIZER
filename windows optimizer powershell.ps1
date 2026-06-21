@@ -1,8 +1,8 @@
 # ================================================================
-#  UNIVERSAL PC OPTIMIZER v9.0
+#  UNIVERSAL PC OPTIMIZER v10.0
 #  Works on: Windows 10 / 11 | All laptop/desktop brands
 #  PowerShell 5.1+  |  GUI + Live Command Log  |  No File Deletion
-#  No Windows Update / No Winget steps (removed per request)
+#  No DISM / No SFC / No Windows Update / No Winget (removed per request)
 #
 #  HOW TO RUN:
 #    Right-click this file -> "Run with PowerShell"
@@ -23,17 +23,13 @@ $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $IsAdmin) {
     if ($PSCommandPath) {
         # Running from a saved .ps1 file — we have a real path, so we CAN
-        # safely relaunch elevated. This is the normal double-click case.
+        # safely relaunch elevated.
         Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
         exit
     } else {
-        # FIX: Running via a pasted one-liner (iex). There is NO script file
-        # backing this execution ($PSCommandPath AND $MyInvocation.MyCommand.Path
-        # are both empty here), so attempting to relaunch by re-reading a file
-        # path always failed silently in the previous version — and the
-        # unconditional `exit` that followed closed the window instantly with
-        # no message shown. FIX: show clear instructions and use `return`
-        # (not `exit`) so the window stays open for the user to read.
+        # Pasted one-liner (iex) — no script file exists to relaunch from.
+        # Show clear instructions and use `return` (NOT `exit`) so the
+        # window stays open instead of closing instantly.
         Write-Host ""
         Write-Host "  ================================================================" -ForegroundColor Red
         Write-Host "   ADMINISTRATOR PRIVILEGES REQUIRED" -ForegroundColor Red
@@ -64,7 +60,7 @@ $PCModel    = (Get-WmiObject Win32_ComputerSystem).Model
 $Is11       = [int]$OSBuild -ge 22000
 $OSLabel    = if ($Is11) { "Windows 11" } else { "Windows 10" }
 
-# ── SHARED STATE (8 steps) ───────────────────────────────────────
+# ── SHARED STATE (6 steps) ───────────────────────────────────────
 $sync = [Hashtable]::Synchronized(@{
     Progress    = 0
     StepIndex   = -1
@@ -72,8 +68,8 @@ $sync = [Hashtable]::Synchronized(@{
     Done        = $false
     ETA         = "--:--"
     LogLines    = [System.Collections.Generic.List[string]]::new()
-    StepsDone   = [bool[]]@($false,$false,$false,$false,$false,$false,$false,$false)
-    StepWeights = [double[]]@(360,180,20,10,8,6,6,4)
+    StepsDone   = [bool[]]@($false,$false,$false,$false,$false,$false)
+    StepWeights = [double[]]@(25,30,15,13,8,4)
     StartTime   = [datetime]::Now
     OSLabel     = $OSLabel
     PCMaker     = $PCMaker
@@ -85,8 +81,8 @@ $sync = [Hashtable]::Synchronized(@{
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Universal PC Optimizer v9.0"
-    Height="760" Width="980"
+    Title="Universal PC Optimizer v10.0"
+    Height="700" Width="980"
     WindowStartupLocation="CenterScreen"
     ResizeMode="CanMinimize"
     Background="#06070F">
@@ -167,7 +163,7 @@ $sync = [Hashtable]::Synchronized(@{
                        FontSize="42" FontWeight="Bold" Foreground="#00CCFF" FontFamily="Segoe UI Light">
               <TextBlock.Effect><DropShadowEffect Color="#00AAFF" BlurRadius="22" ShadowDepth="0" Opacity="0.9"/></TextBlock.Effect>
             </TextBlock>
-            <TextBlock x:Name="StepNumText" Text="STEP 0/8" HorizontalAlignment="Center"
+            <TextBlock x:Name="StepNumText" Text="STEP 0/6" HorizontalAlignment="Center"
                        FontSize="9" Foreground="#2A4060" FontFamily="Segoe UI Mono"/>
           </StackPanel>
         </Grid>
@@ -202,10 +198,10 @@ $sync = [Hashtable]::Synchronized(@{
         <Grid.RowDefinitions>
           <RowDefinition Height="*"/>
           <RowDefinition Height="10"/>
-          <RowDefinition Height="190"/>
+          <RowDefinition Height="220"/>
         </Grid.RowDefinitions>
 
-        <!-- STEP LIST (8 steps) -->
+        <!-- STEP LIST (6 steps) -->
         <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="StepPanel">
             <TextBlock Text="OPTIMIZATION  PIPELINE" FontSize="8" FontWeight="Bold"
@@ -214,57 +210,43 @@ $sync = [Hashtable]::Synchronized(@{
             <Border x:Name="Step0" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon0" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl0" Grid.Column="1" Text="DISM Image Repair" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl0" Grid.Column="1" Text="Drive Optimization (TRIM)" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag0" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <Border x:Name="Step1" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon1" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl1" Grid.Column="1" Text="SFC System File Scan" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl1" Grid.Column="1" Text="Performance Tweaks" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag1" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <Border x:Name="Step2" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon2" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl2" Grid.Column="1" Text="Drive Optimization (TRIM)" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl2" Grid.Column="1" Text="Privacy &amp; Telemetry" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag2" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <Border x:Name="Step3" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon3" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl3" Grid.Column="1" Text="Performance Tweaks" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl3" Grid.Column="1" Text="Memory &amp; CPU Tuning" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag3" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <Border x:Name="Step4" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon4" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl4" Grid.Column="1" Text="Privacy &amp; Telemetry" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl4" Grid.Column="1" Text="Network Optimization" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag4" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <Border x:Name="Step5" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
               <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="Icon5" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl5" Grid.Column="1" Text="Memory &amp; CPU Tuning" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock x:Name="Lbl5" Grid.Column="1" Text="Startup + DNS + Cleanup" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock x:Name="Tag5" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
-
-            <Border x:Name="Step6" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon6" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl6" Grid.Column="1" Text="Network Optimization" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag6" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
-
-            <Border x:Name="Step7" CornerRadius="6" Margin="0,2" Padding="12,8" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/><ColumnDefinition Width="62"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon7" Text="○" Foreground="#243040" FontSize="13" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl7" Grid.Column="1" Text="Startup + DNS + Cleanup" Foreground="#304858" FontSize="11" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag7" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="8" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
               </Grid></Border>
 
             <!-- Done panel -->
@@ -277,7 +259,7 @@ $sync = [Hashtable]::Synchronized(@{
                 </LinearGradientBrush>
               </Border.Background>
               <StackPanel>
-                <TextBlock Text="✓  ALL 8 STEPS COMPLETE" FontSize="12" FontWeight="Bold"
+                <TextBlock Text="✓  ALL 6 STEPS COMPLETE" FontSize="12" FontWeight="Bold"
                            Foreground="#00CC55" TextAlignment="Center" Margin="0,0,0,6">
                   <TextBlock.Effect><DropShadowEffect Color="#00FF66" BlurRadius="10" ShadowDepth="0" Opacity="0.7"/></TextBlock.Effect>
                 </TextBlock>
@@ -386,11 +368,11 @@ $ctrl = @{}
 'RingOuter','RingMid','RingInner','RotOuter','RotMid','RotInner' |
 ForEach-Object { $ctrl[$_] = $window.FindName($_) }
 
-# Step row controls — 8 steps (0..7)
-$sB = 0..7 | ForEach-Object { $window.FindName("Step$_") }
-$sI = 0..7 | ForEach-Object { $window.FindName("Icon$_") }
-$sL = 0..7 | ForEach-Object { $window.FindName("Lbl$_")  }
-$sT = 0..7 | ForEach-Object { $window.FindName("Tag$_")  }
+# Step row controls — 6 steps (0..5)
+$sB = 0..5 | ForEach-Object { $window.FindName("Step$_") }
+$sI = 0..5 | ForEach-Object { $window.FindName("Icon$_") }
+$sL = 0..5 | ForEach-Object { $window.FindName("Lbl$_")  }
+$sT = 0..5 | ForEach-Object { $window.FindName("Tag$_")  }
 
 $rotO = [System.Windows.Media.RotateTransform]$ctrl['RotOuter']
 $rotM = [System.Windows.Media.RotateTransform]$ctrl['RotMid']
@@ -406,7 +388,7 @@ $b = @{
 }
 $thk0=[Windows.Thickness]::new(0); $thk1=[Windows.Thickness]::new(1)
 
-# ── STEP ROW UPDATER (8 steps) ──────────────────────────────────
+# ── STEP ROW UPDATER (6 steps) ──────────────────────────────────
 function Set-StepUI([int]$i,[int]$st) {
     switch ($st) {
         0 { $sB[$i].Background=$b.Trans;$sB[$i].BorderBrush=$b.Trans;$sB[$i].BorderThickness=$thk0
@@ -421,7 +403,7 @@ function Set-StepUI([int]$i,[int]$st) {
     }
 }
 
-# ── TIMER 1: SPINNER 24ms (~41fps, faster than v8's 28ms) ───────
+# ── TIMER 1: SPINNER 24ms ───────────────────────────────────────
 $script:a1=0.0;$script:a2=0.0;$script:a3=0.0;$script:pulse=0.0
 $tSpin=[System.Windows.Threading.DispatcherTimer]::new()
 $tSpin.Interval=[TimeSpan]::FromMilliseconds(24)
@@ -442,7 +424,7 @@ $tClock.Add_Tick({
     $ctrl['ElapsedText'].Text="{0:D2}:{1:D2}" -f [int]$e.TotalMinutes,$e.Seconds
 })
 
-# ── TIMER 3: PROGRESS+LOG POLL 60ms (faster than v8's 80ms) ─────
+# ── TIMER 3: PROGRESS+LOG POLL 60ms ──────────────────────────────
 $script:lastStep=-1;$script:smooth=0.0;$script:logCount=0
 
 $tPoll=[System.Windows.Threading.DispatcherTimer]::new()
@@ -451,7 +433,7 @@ $tPoll.Add_Tick({
     $script:smooth += ([double]$sync.Progress - $script:smooth)*0.25
     $d=[Math]::Round($script:smooth)
     $ctrl['PctText'].Text="$d%"
-    $ctrl['StepNumText'].Text="STEP $([Math]::Max(0,$sync.StepIndex+1))/8"
+    $ctrl['StepNumText'].Text="STEP $([Math]::Max(0,$sync.StepIndex+1))/6"
     $ctrl['StatusText'].Text=$sync.StatusMsg
     $eta=$sync.ETA
     $ctrl['EtaLeft'].Text=$eta
@@ -462,14 +444,14 @@ $tPoll.Add_Tick({
 
     $cur=$sync.StepIndex
     if($cur -ne $script:lastStep){
-        for($i=0;$i -lt 8;$i++){
+        for($i=0;$i -lt 6;$i++){
             if($i -lt $cur){Set-StepUI $i 2}
             elseif($i -eq $cur){Set-StepUI $i 1}
             else{Set-StepUI $i 0}
         }
         $script:lastStep=$cur
     }
-    for($i=0;$i -lt 8;$i++){
+    for($i=0;$i -lt 6;$i++){
         if($sync.StepsDone[$i] -and $i -ne $cur){Set-StepUI $i 2}
     }
 
@@ -487,11 +469,11 @@ $tPoll.Add_Tick({
         if($ctrl['PrgContainer'].ActualWidth -gt 1){
             $ctrl['PrgFill'].Width=$ctrl['PrgContainer'].ActualWidth
         }
-        for($i=0;$i -lt 8;$i++){Set-StepUI $i 2}
+        for($i=0;$i -lt 6;$i++){Set-StepUI $i 2}
         $ctrl['StepNumText'].Text="COMPLETE"
         $ctrl['StatusText'].Text="All optimizations applied."
         $ctrl['EtaLeft'].Text="00:00";$ctrl['EtaFooter'].Text="00:00"
-        $ctrl['FooterText'].Text="Restart required to fully apply all changes."
+        $ctrl['FooterText'].Text="Restart required to fully apply all changes (bcdedit needs reboot)."
         $cv2=[Windows.Media.BrushConverter]::new()
         $ctrl['RingOuter'].Stroke=$cv2.ConvertFrom("#006622")
         $ctrl['RingMid'].Stroke  =$cv2.ConvertFrom("#009933")
@@ -551,7 +533,7 @@ $ps.Runspace=$rs
             $w=$sync.StepWeights
             $el=([datetime]::Now-$sync.StartTime).TotalSeconds
             $dw=0.0;$rw=0.0
-            for($i=0;$i -lt 8;$i++){
+            for($i=0;$i -lt 6;$i++){
                 if($sync.StepsDone[$i]){$dw+=$w[$i]}
                 elseif($i -gt $step){$rw+=$w[$i]}
                 elseif($i -eq $step){$rw+=$w[$i]*0.5}
@@ -562,8 +544,11 @@ $ps.Runspace=$rs
             }
         }catch{}
     }
+    # Stop a service with a hard timeout — NEVER hangs the script.
+    # This is the SAFE replacement for bare Stop-Service calls (which
+    # previously caused the script to hang indefinitely on DiagTrack).
     function KS([string]$name,[int]$sec=4){
-        try{Set-Service -Name $name -StartupType Disabled -ErrorAction SilentlyContinue;L "Set-Service '$name' Disabled"}catch{}
+        try{Set-Service -Name $name -StartupType Disabled -ErrorAction SilentlyContinue;L "Set-Service '$name' -StartupType Disabled"}catch{}
         try{
             $j=Start-Job {param($n)Stop-Service -Name $n -Force -ErrorAction SilentlyContinue} -ArgumentList $name
             $null=Wait-Job $j -Timeout $sec
@@ -572,60 +557,26 @@ $ps.Runspace=$rs
         }catch{}
     }
 
-    # Reduced from 700ms -> 500ms for faster start
     Start-Sleep -Milliseconds 500
-
     $sync.StatusMsg = "Detected: $($sync.OSLabel) | $($sync.PCMaker) $($sync.PCModel)"
 
     # ════════════════════════════════════════════════════════════
-    # STEP 0 — DISM IMAGE REPAIR
+    # STEP 0 — DRIVE TRIM
     # ════════════════════════════════════════════════════════════
-    S 0 2 "DISM: CheckHealth..."
-    L "=== STEP 1/8: DISM Image Repair ==="
-    L "Repair-WindowsImage -Online -CheckHealth"
-    Repair-WindowsImage -Online -CheckHealth  -ErrorAction SilentlyContinue|Out-Null
-
-    S 0 22 "DISM: ScanHealth..."
-    L "Repair-WindowsImage -Online -ScanHealth"
-    Repair-WindowsImage -Online -ScanHealth   -ErrorAction SilentlyContinue|Out-Null
-
-    S 0 50 "DISM: RestoreHealth (needs internet)..."
-    L "Repair-WindowsImage -Online -RestoreHealth"
-    Repair-WindowsImage -Online -RestoreHealth -ErrorAction SilentlyContinue|Out-Null
-    L "DISM repair complete"
-
-    $sync.StepsDone[0]=$true
-    S 0 61 "DISM image repair done."
-
-    # ════════════════════════════════════════════════════════════
-    # STEP 1 — SFC SCAN
-    # ════════════════════════════════════════════════════════════
-    S 1 65 "SFC: Scanning and repairing system files..."
-    L "=== STEP 2/8: SFC System File Scan ==="
-    L "sfc.exe /scannow"
-    & "$env:SystemRoot\System32\sfc.exe" /scannow 2>&1|Out-Null
-    L "SFC scan complete — see C:\Windows\Logs\CBS\CBS.log for details"
-
-    $sync.StepsDone[1]=$true
-    S 1 91 "SFC scan complete."
-
-    # ════════════════════════════════════════════════════════════
-    # STEP 2 — DRIVE TRIM
-    # ════════════════════════════════════════════════════════════
-    S 2 92 "Running SSD TRIM on C:..."
-    L "=== STEP 3/8: Drive Optimization ==="
+    S 0 5 "Running SSD TRIM on C:..."
+    L "=== STEP 1/6: Drive Optimization ==="
     L "Optimize-Volume -DriveLetter C -ReTrim"
     Optimize-Volume -DriveLetter C -ReTrim -ErrorAction SilentlyContinue
     L "Drive optimization complete"
 
-    $sync.StepsDone[2]=$true
-    S 2 94 "SSD TRIM done."
+    $sync.StepsDone[0]=$true
+    S 0 26 "SSD TRIM done."
 
     # ════════════════════════════════════════════════════════════
-    # STEP 3 — PERFORMANCE TWEAKS
+    # STEP 1 — PERFORMANCE TWEAKS
     # ════════════════════════════════════════════════════════════
-    S 3 94 "Setting power plan + applying perf tweaks..."
-    L "=== STEP 4/8: Performance Tweaks ==="
+    S 1 28 "Setting power plan + applying perf tweaks..."
+    L "=== STEP 2/6: Performance Tweaks ==="
 
     L "powercfg -setactive High Performance"
     & "$env:SystemRoot\System32\powercfg.exe" -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>&1|Out-Null
@@ -636,6 +587,12 @@ $ps.Runspace=$rs
 
     L "REG: Disable transparency effects"
     R "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize" "EnableTransparency" 0
+
+    L "REG: MinAnimate=0 (disable minimize/maximize animation)"
+    # NOTE: MinAnimate is a REG_SZ value in Windows, not REG_DWORD.
+    # Using DWord here would not be recognized by the OS — String is required
+    # for this tweak to actually take effect.
+    R "HKCU:\Control Panel\Desktop\WindowMetrics" "MinAnimate" "0" "String"
 
     L "REG: Win32PrioritySeparation=38 (foreground CPU boost)"
     R "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" "Win32PrioritySeparation" 38
@@ -690,19 +647,37 @@ $ps.Runspace=$rs
     L "REG: HiberbootEnabled=1 (fast startup - registry only)"
     R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled" 1
 
-    $sync.StepsDone[3]=$true
-    S 3 96 "Performance tweaks done."
+    L "REG: CLSID {86ca1aa0-...} default value cleared (Explorer namespace tweak)"
+    # Source: community registry-hacks guide. Sets the unnamed (Default)
+    # value of this CLSID key to an empty string. Must use String type —
+    # the default value of a registry key is always REG_SZ.
+    R "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" "(default)" "" "String"
+
+    L "bcdedit: useplatformtick=yes"
+    & "$env:SystemRoot\System32\bcdedit.exe" /set useplatformtick yes 2>&1|Out-Null
+    L "bcdedit: disabledynamictick=yes"
+    & "$env:SystemRoot\System32\bcdedit.exe" /set disabledynamictick yes 2>&1|Out-Null
+    L "bcdedit: deletevalue useplatformclock"
+    & "$env:SystemRoot\System32\bcdedit.exe" /deletevalue useplatformclock 2>&1|Out-Null
+    L "bcdedit changes require a restart to take effect"
+
+    $sync.StepsDone[1]=$true
+    S 1 58 "Performance tweaks done."
 
     # ════════════════════════════════════════════════════════════
-    # STEP 4 — PRIVACY & TELEMETRY
+    # STEP 2 — PRIVACY & TELEMETRY
     # ════════════════════════════════════════════════════════════
-    S 4 96 "Disabling telemetry services (safe timeout)..."
-    L "=== STEP 5/8: Privacy & Telemetry ==="
+    S 2 60 "Disabling telemetry services (safe timeout)..."
+    L "=== STEP 3/6: Privacy & Telemetry ==="
 
-    KS "DiagTrack"       4
+    # DiagTrack disabled via the safe KS() wrapper below — NOT a bare
+    # Stop-Service call. Bare Stop-Service "DiagTrack" was the exact
+    # cause of a previous version hanging indefinitely; KS() enforces
+    # a 4-second timeout so the script always continues regardless.
+    KS "DiagTrack"        4
     KS "dmwappushservice" 4
-    KS "WerSvc"          4
-    KS "PcaSvc"          4
+    KS "WerSvc"           4
+    KS "PcaSvc"           4
 
     L "REG: AllowTelemetry=0"
     RB "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" @{
@@ -730,19 +705,22 @@ $ps.Runspace=$rs
     R "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" "GlobalUserDisabled" 1
     R "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Search" "BackgroundAppGlobalToggle" 0
 
-    $sync.StepsDone[4]=$true
-    S 4 97 "Privacy & telemetry disabled."
+    $sync.StepsDone[2]=$true
+    S 2 74 "Privacy & telemetry disabled."
 
     # ════════════════════════════════════════════════════════════
-    # STEP 5 — MEMORY & CPU
+    # STEP 3 — MEMORY & CPU
     # ════════════════════════════════════════════════════════════
-    S 5 97 "Applying memory and CPU optimizations..."
-    L "=== STEP 6/8: Memory & CPU Tuning ==="
+    S 3 76 "Applying memory and CPU optimizations..."
+    L "=== STEP 4/6: Memory & CPU Tuning ==="
 
     L "REG: DisablePagingExecutive=1 (kernel in RAM)"
     R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "DisablePagingExecutive" 1
     R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "LargeSystemCache" 0
     R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "ClearPageFileAtShutdown" 0
+
+    L "REG: Memory Compression disabled (Compression=0)"
+    R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" "Compression" 0
 
     L "REG: Multimedia timer 1ms + network throttle off"
     R "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" "SystemResponsiveness" 0
@@ -761,14 +739,14 @@ $ps.Runspace=$rs
       "\Microsoft\Windows\Windows Defender\Windows Defender Idle Scan") |
     ForEach-Object{& "$env:SystemRoot\System32\schtasks.exe" /Change /TN $_ /Disable 2>&1|Out-Null}
 
-    $sync.StepsDone[5]=$true
-    S 5 98 "Memory & CPU tuning done."
+    $sync.StepsDone[3]=$true
+    S 3 87 "Memory & CPU tuning done."
 
     # ════════════════════════════════════════════════════════════
-    # STEP 6 — NETWORK
+    # STEP 4 — NETWORK
     # ════════════════════════════════════════════════════════════
-    S 6 98 "Applying network optimizations..."
-    L "=== STEP 7/8: Network Optimization ==="
+    S 4 89 "Applying network optimizations..."
+    L "=== STEP 5/6: Network Optimization ==="
 
     L "REG: SMB throttling off + Large MTU on"
     R "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" "DisableBandwidthThrottling" 1
@@ -804,14 +782,14 @@ $ps.Runspace=$rs
         Get-ChildItem $ti -EA SilentlyContinue|ForEach-Object{R $_.PSPath "TcpAckFrequency" 1;R $_.PSPath "TCPNoDelay" 1}
     }
 
-    $sync.StepsDone[6]=$true
-    S 6 99 "Network optimization done."
+    $sync.StepsDone[4]=$true
+    S 4 96 "Network optimization done."
 
     # ════════════════════════════════════════════════════════════
-    # STEP 7 — STARTUP CLEANUP + DNS + WINSOCK
+    # STEP 5 — STARTUP CLEANUP + DNS + WINSOCK
     # ════════════════════════════════════════════════════════════
-    S 7 99 "Removing startup bloat entries..."
-    L "=== STEP 8/8: Startup + DNS + Cleanup ==="
+    S 5 97 "Removing startup bloat entries..."
+    L "=== STEP 6/6: Startup + DNS + Cleanup ==="
 
     $rp="HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
     @("OneDrive","Spotify","Discord","Skype","Teams","SupportAssist",
@@ -836,16 +814,16 @@ $ps.Runspace=$rs
     L "Set-Clipboard -Value `$null"
     Set-Clipboard -Value $null -ErrorAction SilentlyContinue
 
-    L "=== ALL 8 STEPS COMPLETE ==="
-    $sync.StepsDone[7]=$true
-    S 7 100 "All done! Restart recommended."
+    L "=== ALL 6 STEPS COMPLETE ==="
+    $sync.StepsDone[5]=$true
+    S 5 100 "All done! Restart recommended (bcdedit needs reboot)."
     $sync.Done=$true
 })
 
 # ── WINDOW LOADED ────────────────────────────────────────────────
 $window.Add_Loaded({
     $sync.StartTime=[datetime]::Now
-    $ctrl['TitleSub'].Text="$($sync.OSLabel)  ·  $($sync.PCMaker) $($sync.PCModel)  ·  8 Steps  ·  No Files Deleted"
+    $ctrl['TitleSub'].Text="$($sync.OSLabel)  ·  $($sync.PCMaker) $($sync.PCModel)  ·  6 Steps  ·  No Files Deleted"
     $tSpin.Start();$tClock.Start();$tPoll.Start()
     [void]$ps.BeginInvoke()
     $ctrl['FooterText'].Text="Optimization running — do not close this window."
