@@ -1,7 +1,0 @@
-# 1. Save the script (already done — download it above)
-
-# 2. Make it executable
-chmod +x linux_optimizer.sh
-
-# 3. Run it
-sudo ./linux_optimizer.sh
