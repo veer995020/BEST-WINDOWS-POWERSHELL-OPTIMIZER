@@ -1,5 +1,5 @@
 # ================================================================
-#  UNIVERSAL PC OPTIMIZER v15.7
+#  UNIVERSAL PC OPTIMIZER v15.8
 #  Works on: Windows 10 / 11 | All laptop/desktop brands
 #  PowerShell 5.1+  |  GUI + Live Command Log
 #  No DISM / No SFC / No Windows Update / No Winget (removed per request)
@@ -26,12 +26,15 @@
 #         Performance duplicate-scheme call (never actually activated,
 #         did nothing); PUA Protection now checks Defender is actually
 #         active before attempting (was silently failing on machines
-#         with third-party AV and logging success anyway)
-#         IMMEDIATELY (no restart needed); only bcdedit + SMB1 removal
-#         actually require a reboot. Added companion Verify-Tweaks.ps1
-#         which checks live system state against ~35 of the tweaks this
-#         script applies and reports PASS/FAIL for each, before or after
-#         a restart.
+#         with third-party AV and logging success anyway). Added
+#         companion Verify_Tweaks.ps1 which checks live system state
+#         against ~35 of the tweaks this script applies and reports
+#         PASS/FAIL for each, before or after a restart.
+#  v15.8: pipeline rebuilt with 3 new animations — pulsing rainbow glow
+#         on the running step, ease-out-back checkmark pop-bounce on
+#         completion, and a live "current tweak" line that fades in
+#         under whichever step is running. Command log no longer caps
+#         at 300 lines — every command from the run stays visible.
 #
 #  HOW TO RUN:
 #    Right-click this file -> "Run with PowerShell"
@@ -97,6 +100,7 @@ $sync = [Hashtable]::Synchronized(@{
     Done        = $false
     ETA         = "--:--"
     LogLines    = [System.Collections.Generic.List[string]]::new()
+    CurrentTweak = ""
     StepsDone   = [bool[]]@($false,$false,$false,$false,$false,$false)
     StepWeights = [double[]]@(25,42,38,13,8,16)
     StartTime   = [datetime]::Now
@@ -110,7 +114,7 @@ $sync = [Hashtable]::Synchronized(@{
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Universal PC Optimizer v15.7"
+    Title="Universal PC Optimizer v15.8"
     Height="1080" Width="1920"
     WindowStartupLocation="Manual"
     ResizeMode="CanMinimize"
@@ -237,46 +241,124 @@ $sync = [Hashtable]::Synchronized(@{
                        Foreground="#1A2A38" FontFamily="Segoe UI Mono" Margin="2,0,0,7"/>
 
             <Border x:Name="Step0" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon0" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl0" Grid.Column="1" Text="Drive Optimization (TRIM)" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag0" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow0" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon0" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale0" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl0" Grid.Column="1" Text="Drive Optimization (TRIM)" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag0" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail0" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <Border x:Name="Step1" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon1" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl1" Grid.Column="1" Text="Performance Tweaks" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag1" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow1" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon1" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale1" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl1" Grid.Column="1" Text="Performance Tweaks" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag1" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail1" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <Border x:Name="Step2" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon2" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl2" Grid.Column="1" Text="Privacy &amp; Telemetry" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag2" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow2" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon2" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale2" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl2" Grid.Column="1" Text="Privacy &amp; Telemetry" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag2" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail2" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <Border x:Name="Step3" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon3" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl3" Grid.Column="1" Text="Memory &amp; CPU Tuning" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag3" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow3" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon3" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale3" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl3" Grid.Column="1" Text="Memory &amp; CPU Tuning" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag3" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail3" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <Border x:Name="Step4" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon4" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl4" Grid.Column="1" Text="Network Optimization" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag4" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow4" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon4" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale4" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl4" Grid.Column="1" Text="Network Optimization" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag4" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail4" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <Border x:Name="Step5" CornerRadius="8" Margin="0,5" Padding="18,15" Background="#080A18">
-              <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
-                <TextBlock x:Name="Icon5" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Lbl5" Grid.Column="1" Text="Startup, DNS &amp; Disk Cleanup" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
-                <TextBlock x:Name="Tag5" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
-              </Grid></Border>
+              <Border.Effect>
+                <DropShadowEffect x:Name="Glow5" Color="#0088CC" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+              </Border.Effect>
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0"><Grid.ColumnDefinitions><ColumnDefinition Width="38"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+                  <TextBlock x:Name="Icon5" Text="○" Foreground="#243040" FontSize="22" VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                      <ScaleTransform x:Name="IconScale5" ScaleX="1" ScaleY="1" CenterX="11" CenterY="14"/>
+                    </TextBlock.RenderTransform>
+                  </TextBlock>
+                  <TextBlock x:Name="Lbl5" Grid.Column="1" Text="Startup, DNS &amp; Disk Cleanup" Foreground="#304858" FontSize="18" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="Tag5" Grid.Column="2" Text="PENDING" Foreground="#1E2C3A" FontSize="12" HorizontalAlignment="Right" VerticalAlignment="Center" FontFamily="Segoe UI Mono"/>
+                </Grid>
+                <TextBlock x:Name="Detail5" Grid.Row="1" Text="" Opacity="0" Margin="38,4,0,0"
+                           FontSize="11" FontFamily="Consolas" Foreground="#5A8CB8" TextWrapping="Wrap"/>
+              </Grid>
+            </Border>
 
             <!-- Done panel -->
             <Border x:Name="DonePanel" Visibility="Collapsed" CornerRadius="8" Margin="0,10,0,0"
@@ -407,7 +489,7 @@ $sync = [Hashtable]::Synchronized(@{
         <TextBlock x:Name="SplashTitle" Text="UNIVERSAL PC OPTIMIZER" Opacity="0"
                    FontSize="26" FontWeight="Bold" Foreground="White" FontFamily="Segoe UI"
                    HorizontalAlignment="Center" Margin="0,18,0,0"/>
-        <TextBlock x:Name="SplashSubtitle" Text="v15.7" Opacity="0"
+        <TextBlock x:Name="SplashSubtitle" Text="v15.8" Opacity="0"
                    FontSize="13" Foreground="#6FA8D8" FontFamily="Segoe UI Mono"
                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
         <TextBlock x:Name="SplashCredit" Text="Made by Veer Bhardwaj" Opacity="0"
@@ -460,6 +542,9 @@ $sB = 0..5 | ForEach-Object { $window.FindName("Step$_") }
 $sI = 0..5 | ForEach-Object { $window.FindName("Icon$_") }
 $sL = 0..5 | ForEach-Object { $window.FindName("Lbl$_")  }
 $sT = 0..5 | ForEach-Object { $window.FindName("Tag$_")  }
+$sD = 0..5 | ForEach-Object { $window.FindName("Detail$_") }
+$sG = 0..5 | ForEach-Object { $window.FindName("Glow$_") }
+$sIS = 0..5 | ForEach-Object { [System.Windows.Media.ScaleTransform]$window.FindName("IconScale$_") }
 
 $rotO = [System.Windows.Media.RotateTransform]$ctrl['RotOuter']
 $rotM = [System.Windows.Media.RotateTransform]$ctrl['RotMid']
@@ -502,17 +587,25 @@ $RainbowBrushes = 0..($RainbowSteps-1) | ForEach-Object {
 }
 
 # ── STEP ROW UPDATER (6 steps) ──────────────────────────────────
+$script:completionAnim = @{}   # stepIndex -> elapsed ms, drives the pop-bounce checkmark
+$script:detailOpacity  = @(0.0,0.0,0.0,0.0,0.0,0.0)
+
 function Set-StepUI([int]$i,[int]$st) {
     switch ($st) {
         0 { $sB[$i].Background=$b.Trans;$sB[$i].BorderBrush=$b.Trans;$sB[$i].BorderThickness=$thk0
             $sI[$i].Text="○";$sI[$i].Foreground=$b.PendI;$sL[$i].Foreground=$b.PendL
-            $sT[$i].Text="PENDING";$sT[$i].Foreground=$b.PendT }
+            $sT[$i].Text="PENDING";$sT[$i].Foreground=$b.PendT
+            $sD[$i].Text="";$sG[$i].Opacity=0;$sIS[$i].ScaleX=1;$sIS[$i].ScaleY=1 }
         1 { $sB[$i].Background=$b.ActBg;$sB[$i].BorderBrush=$b.ActBor;$sB[$i].BorderThickness=$thk1
             $sI[$i].Text="▶";$sI[$i].Foreground=$b.ActI;$sL[$i].Foreground=$b.White
-            $sT[$i].Text="RUNNING";$sT[$i].Foreground=$b.ActT }
+            $sT[$i].Text="RUNNING";$sT[$i].Foreground=$b.ActT
+            $sIS[$i].ScaleX=1;$sIS[$i].ScaleY=1 }
         2 { $sB[$i].Background=$b.DonBg;$sB[$i].BorderBrush=$b.DonBor;$sB[$i].BorderThickness=$thk1
             $sI[$i].Text="✓";$sI[$i].Foreground=$b.DonI;$sL[$i].Foreground=$b.DonL
-            $sT[$i].Text="DONE";$sT[$i].Foreground=$b.DonT }
+            $sT[$i].Text="DONE";$sT[$i].Foreground=$b.DonT
+            $sD[$i].Text="";$sG[$i].Opacity=0
+            # Kick off the checkmark pop-bounce — the spin timer (24ms) drives it
+            $script:completionAnim[$i] = 0 }
     }
 }
 
@@ -542,6 +635,40 @@ $tSpin.Add_Tick({
         if($ctrl['RingInner'].Effect){$ctrl['RingInner'].Effect.Color=$brush3.Color}
         $ctrl['PctText'].Foreground=$brush3
         if($g){$g.Color=$brush3.Color}
+    }
+
+    # ── PIPELINE ANIMATION 1: pulsing rainbow glow on the RUNNING row ──
+    # Reuses the same rainbow palette as the spinner rings so the whole
+    # UI feels like one connected animation instead of separate effects.
+    if($script:lastStep -ge 0 -and $script:lastStep -lt 6 -and -not $sync.Done){
+        $glowBrush = $RainbowBrushes[$script:hueIdx]
+        $glow = $sG[$script:lastStep]
+        $glow.Color = $glowBrush.Color
+        $glow.BlurRadius = 18
+        $glow.Opacity = 0.25 + 0.30*[Math]::Sin($script:pulse*1.4)
+    }
+
+    # ── PIPELINE ANIMATION 2: checkmark pop-bounce on step completion ──
+    # Same ease-out-back overshoot formula used for the splash icon —
+    # the checkmark grows past 1.0x then settles, instead of just
+    # appearing flat/static the instant a step finishes.
+    if($script:completionAnim.Count -gt 0){
+        $keysToRemove = @()
+        foreach($idx in @($script:completionAnim.Keys)){
+            $script:completionAnim[$idx] += 24
+            $te = $script:completionAnim[$idx]
+            $t1 = [Math]::Max(0.0,[Math]::Min(1.0,$te/350.0))
+            $easeBack = 1 + 2.4*[Math]::Pow($t1-1,3) + 1.4*[Math]::Pow($t1-1,2)
+            $scaleVal = 0.3 + 0.7*$easeBack
+            if($scaleVal -lt 0.05){$scaleVal=0.05}
+            $sIS[$idx].ScaleX = $scaleVal
+            $sIS[$idx].ScaleY = $scaleVal
+            if($te -ge 350){
+                $sIS[$idx].ScaleX = 1; $sIS[$idx].ScaleY = 1
+                $keysToRemove += $idx
+            }
+        }
+        foreach($idx in $keysToRemove){ $script:completionAnim.Remove($idx) }
     }
 })
 
@@ -584,6 +711,20 @@ $tPoll.Add_Tick({
     }
     for($i=0;$i -lt 6;$i++){
         if($sync.StepsDone[$i] -and $i -ne $cur){Set-StepUI $i 2}
+    }
+
+    # ── PIPELINE ANIMATION 3: live "current tweak" text under the
+    #    running row, fading in/out rather than snapping on/off ──────
+    $tweakText = $sync.CurrentTweak
+    for($i=0;$i -lt 6;$i++){
+        $target = if($i -eq $cur -and -not $sync.Done){1.0}else{0.0}
+        $script:detailOpacity[$i] += ($target - $script:detailOpacity[$i]) * 0.35
+        if([Math]::Abs($script:detailOpacity[$i]) -lt 0.02){$script:detailOpacity[$i]=0.0}
+        $sD[$i].Opacity = $script:detailOpacity[$i]
+        if($i -eq $cur -and $tweakText){
+            $shown = if($tweakText.Length -gt 90){$tweakText.Substring(0,87)+"..."}else{$tweakText}
+            $sD[$i].Text = "→ $shown"
+        }
     }
 
     $ll = $sync.LogLines
@@ -725,7 +866,9 @@ $ps.Runspace=$rs
     function L([string]$msg){
         $ts=Get-Date -Format "HH:mm:ss"
         $sync.LogLines.Add("[$ts] $msg")
-        if($sync.LogLines.Count -gt 300){$sync.LogLines.RemoveAt(0)}
+        # No cap — every command run this session stays in the log.
+        # (~120-180 lines for a full run; trivial for a TextBlock to hold.)
+        $sync.CurrentTweak = $msg
     }
     function R([string]$p,[string]$n,$v,[string]$t="DWord"){
         try{
