@@ -1,5 +1,5 @@
 # ================================================================
-#  UNIVERSAL PC OPTIMIZER v15.8
+#  UNIVERSAL PC OPTIMIZER v15.9
 #  Works on: Windows 10 / 11 | All laptop/desktop brands
 #  PowerShell 5.1+  |  GUI + Live Command Log
 #  No DISM / No SFC / No Windows Update / No Winget (removed per request)
@@ -35,6 +35,14 @@
 #         completion, and a live "current tweak" line that fades in
 #         under whichever step is running. Command log no longer caps
 #         at 300 lines — every command from the run stays visible.
+#  v15.9: ambient drifting particle background (35 particles, real WPF
+#         Ellipse shapes with independent physics), confetti burst on
+#         completion, breathing rainbow edge-glow around the whole
+#         window, and a fade-to-black transition on Restart/Close
+#         instead of an abrupt window close. Restart delay is now /t 3.
+#         NOTE: this is real-time rendered animation, not embedded video
+#         — a single portable .ps1 can't bundle an actual video file, so
+#         everything here is genuine WPF vector/physics animation instead.
 #
 #  HOW TO RUN:
 #    Right-click this file -> "Run with PowerShell"
@@ -114,7 +122,7 @@ $sync = [Hashtable]::Synchronized(@{
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Universal PC Optimizer v15.8"
+    Title="Universal PC Optimizer v15.9"
     Height="1080" Width="1920"
     WindowStartupLocation="Manual"
     ResizeMode="CanMinimize"
@@ -125,6 +133,15 @@ $sync = [Hashtable]::Synchronized(@{
       <RowDefinition Height="*"/>
       <RowDefinition Height="52"/>
     </Grid.RowDefinitions>
+
+    <!-- AMBIENT PARTICLE BACKGROUND (drifting embers, renders behind everything) -->
+    <Canvas x:Name="ParticleCanvas" Grid.RowSpan="3" IsHitTestVisible="False" ClipToBounds="True"/>
+
+    <!-- BREATHING EDGE GLOW (pulses gently around the whole window border) -->
+    <Border x:Name="EdgeGlow" Grid.RowSpan="3" BorderThickness="3" Opacity="0" IsHitTestVisible="False">
+      <Border.BorderBrush><SolidColorBrush x:Name="EdgeGlowBrush" Color="#00CCFF"/></Border.BorderBrush>
+      <Border.Effect><DropShadowEffect x:Name="EdgeGlowFx" Color="#00CCFF" BlurRadius="30" ShadowDepth="0" Opacity="0.6"/></Border.Effect>
+    </Border>
 
     <!-- HEADER -->
     <Border Grid.Row="0">
@@ -489,7 +506,7 @@ $sync = [Hashtable]::Synchronized(@{
         <TextBlock x:Name="SplashTitle" Text="UNIVERSAL PC OPTIMIZER" Opacity="0"
                    FontSize="26" FontWeight="Bold" Foreground="White" FontFamily="Segoe UI"
                    HorizontalAlignment="Center" Margin="0,18,0,0"/>
-        <TextBlock x:Name="SplashSubtitle" Text="v15.8" Opacity="0"
+        <TextBlock x:Name="SplashSubtitle" Text="v15.9" Opacity="0"
                    FontSize="13" Foreground="#6FA8D8" FontFamily="Segoe UI Mono"
                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
         <TextBlock x:Name="SplashCredit" Text="Made by Veer Bhardwaj" Opacity="0"
@@ -534,7 +551,8 @@ $ctrl = @{}
 'FooterText','ElapsedText','EtaFooter',
 'ElapsedFinal','DonePanel','BtnRestart','BtnClose',
 'RingOuter','RingMid','RingInner','RotOuter','RotMid','RotInner',
-'SplashOverlay','SplashIcon','SplashIconScale','SplashIconRotate','SplashTitle','SplashSubtitle','SplashCredit','SplashDots' |
+'SplashOverlay','SplashIcon','SplashIconScale','SplashIconRotate','SplashTitle','SplashSubtitle','SplashCredit','SplashDots',
+'ParticleCanvas','EdgeGlow','EdgeGlowBrush','EdgeGlowFx' |
 ForEach-Object { $ctrl[$_] = $window.FindName($_) }
 
 # Step row controls — 6 steps (0..5)
@@ -586,6 +604,72 @@ $RainbowBrushes = 0..($RainbowSteps-1) | ForEach-Object {
     [Windows.Media.SolidColorBrush]::new((Convert-HSVtoColor $hue 0.85 1.0))
 }
 
+# ── AMBIENT PARTICLE SYSTEM ──────────────────────────────────────
+# Real WPF Ellipse shapes placed on ParticleCanvas, each with its own
+# position/velocity/opacity, animated by hand every spin tick (24ms) —
+# same "DispatcherTimer + manual interpolation" approach used everywhere
+# else in this script, just applied to a small physics simulation instead
+# of a single value. Two independent pools: a slow ambient drift that
+# runs the whole time, and a one-shot confetti burst fired on completion.
+$rng = [Random]::new()
+$script:particles = New-Object System.Collections.Generic.List[object]
+
+function New-Particle([bool]$isBurst) {
+    $ellipse = [System.Windows.Shapes.Ellipse]::new()
+    $size = if($isBurst){ $rng.Next(4,9) } else { $rng.Next(2,5) }
+    $ellipse.Width = $size; $ellipse.Height = $size
+    $hue = $rng.Next(0,$RainbowSteps)
+    $ellipse.Fill = $RainbowBrushes[$hue]
+    $ellipse.Opacity = if($isBurst){ 1.0 } else { 0.15 + $rng.NextDouble()*0.25 }
+    [void]$ctrl['ParticleCanvas'].Children.Add($ellipse)
+
+    $obj = [pscustomobject]@{
+        Shape = $ellipse
+        X = if($isBurst){ 960.0 } else { $rng.NextDouble()*1920.0 }
+        Y = if($isBurst){ 130.0 } else { $rng.NextDouble()*1080.0 }
+        VX = if($isBurst){ ($rng.NextDouble()-0.5)*9.0 } else { ($rng.NextDouble()-0.5)*0.35 }
+        VY = if($isBurst){ -($rng.NextDouble()*7.0) - 2.0 } else { ($rng.NextDouble()-0.5)*0.35 }
+        IsBurst = $isBurst
+        Life = 0.0
+        MaxLife = if($isBurst){ 1800.0 + $rng.NextDouble()*800.0 } else { -1 }  # -1 = lives forever, wraps around
+    }
+    [Windows.Controls.Canvas]::SetLeft($ellipse,$obj.X)
+    [Windows.Controls.Canvas]::SetTop($ellipse,$obj.Y)
+    $script:particles.Add($obj)
+    return $obj
+}
+
+# Seed ~35 ambient background particles at startup
+1..35 | ForEach-Object { [void](New-Particle $false) }
+
+function Update-Particles([double]$dtMs) {
+    $toRemove = New-Object System.Collections.Generic.List[object]
+    foreach($p in $script:particles){
+        $p.X += $p.VX; $p.Y += $p.VY
+        if($p.IsBurst){
+            $p.VY += 0.10                      # gravity pulls confetti down
+            $p.Life += $dtMs
+            $fade = 1.0 - ($p.Life / $p.MaxLife)
+            $p.Shape.Opacity = [Math]::Max(0,$fade)
+            if($p.Life -ge $p.MaxLife){ $toRemove.Add($p) }
+        } else {
+            # Ambient particles gently wrap around screen edges forever
+            if($p.X -lt -10){$p.X=1930}elseif($p.X -gt 1930){$p.X = -10}
+            if($p.Y -lt -10){$p.Y=1090}elseif($p.Y -gt 1090){$p.Y = -10}
+        }
+        [Windows.Controls.Canvas]::SetLeft($p.Shape,$p.X)
+        [Windows.Controls.Canvas]::SetTop($p.Shape,$p.Y)
+    }
+    foreach($p in $toRemove){
+        $ctrl['ParticleCanvas'].Children.Remove($p.Shape)
+        [void]$script:particles.Remove($p)
+    }
+}
+
+function Start-ConfettiBurst {
+    1..70 | ForEach-Object { [void](New-Particle $true) }
+}
+
 # ── STEP ROW UPDATER (6 steps) ──────────────────────────────────
 $script:completionAnim = @{}   # stepIndex -> elapsed ms, drives the pop-bounce checkmark
 $script:detailOpacity  = @(0.0,0.0,0.0,0.0,0.0,0.0)
@@ -611,6 +695,7 @@ function Set-StepUI([int]$i,[int]$st) {
 
 # ── TIMER 1: SPINNER 24ms — now cycles through a rainbow palette ────
 $script:a1=0.0;$script:a2=0.0;$script:a3=0.0;$script:pulse=0.0
+$script:edgeHue=0
 $script:hueIdx=0
 $tSpin=[System.Windows.Threading.DispatcherTimer]::new()
 $tSpin.Interval=[TimeSpan]::FromMilliseconds(24)
@@ -670,6 +755,22 @@ $tSpin.Add_Tick({
         }
         foreach($idx in $keysToRemove){ $script:completionAnim.Remove($idx) }
     }
+})
+
+# ── TIMER 1B: PARTICLES + EDGE GLOW 24ms — runs independently of tSpin
+#    so ambient drift keeps going and confetti can actually fall/fade
+#    after the optimization finishes (tSpin stops on completion) ───────
+$script:particlePulse=0.0
+$tParticles=[System.Windows.Threading.DispatcherTimer]::new()
+$tParticles.Interval=[TimeSpan]::FromMilliseconds(24)
+$tParticles.Add_Tick({
+    Update-Particles 24
+    $script:particlePulse += 0.065
+    $script:edgeHue = ($script:edgeHue + 1) % $RainbowSteps
+    $edgeBrush = $RainbowBrushes[$script:edgeHue]
+    $ctrl['EdgeGlowBrush'].Color = $edgeBrush.Color
+    $ctrl['EdgeGlowFx'].Color = $edgeBrush.Color
+    $ctrl['EdgeGlow'].Opacity = 0.12 + 0.10*[Math]::Sin($script:particlePulse*0.5)
 })
 
 # ── TIMER 2: CLOCK+ELAPSED 1s ────────────────────────────────────
@@ -755,6 +856,7 @@ $tPoll.Add_Tick({
 
     if($sync.Done){
         $tPoll.Stop();$tSpin.Stop();$tClock.Stop()
+        Start-ConfettiBurst
         $ctrl['PctText'].Text="100%"
         if($ctrl['PrgContainer'].ActualWidth -gt 1){
             $ctrl['PrgFill'].Width=$ctrl['PrgContainer'].ActualWidth
@@ -846,11 +948,29 @@ $tIntro.Add_Tick({
 })
 
 # ── BUTTONS ──────────────────────────────────────────────────────
+# Fade-to-black close transition — same manual-timer-driven animation
+# style used everywhere else in this script (no WPF Storyboards),
+# just applied to the whole window's Opacity instead of one control.
+function Close-WithFade([scriptblock]$onDone) {
+    $tFade = [System.Windows.Threading.DispatcherTimer]::new()
+    $tFade.Interval = [TimeSpan]::FromMilliseconds(16)
+    $tFade.Add_Tick({
+        $window.Opacity -= 0.07
+        if($window.Opacity -le 0){
+            $tFade.Stop()
+            & $onDone
+            $window.Close()
+        }
+    }.GetNewClosure())
+    $tFade.Start()
+}
+
 $ctrl['BtnRestart'].Add_Click({
-    & "$env:SystemRoot\System32\shutdown.exe" /r /t 0 /c "PC Optimization Complete"
-    $window.Close()
+    Close-WithFade { & "$env:SystemRoot\System32\shutdown.exe" /r /t 3 /c "PC Optimization Complete" }
 })
-$ctrl['BtnClose'].Add_Click({$window.Close()})
+$ctrl['BtnClose'].Add_Click({
+    Close-WithFade { }
+})
 
 # ── BACKGROUND RUNSPACE (MTA) ────────────────────────────────────
 $rs=[RunspaceFactory]::CreateRunspace()
@@ -1463,12 +1583,13 @@ $ps.Runspace=$rs
 $window.Add_Loaded({
     $ctrl['TitleSub'].Text="$($sync.OSLabel)  ·  $($sync.PCMaker) $($sync.PCModel)  ·  6 Steps  ·  Includes Disk Cleanup"
     $ctrl['FooterText'].Text="Starting..."
+    $tParticles.Start()
     $tIntro.Start()
 })
 
 # ── WINDOW CLOSED ────────────────────────────────────────────────
 $window.Add_Closed({
-    $tIntro.Stop();$tSpin.Stop();$tClock.Stop();$tPoll.Stop()
+    $tIntro.Stop();$tSpin.Stop();$tClock.Stop();$tPoll.Stop();$tParticles.Stop()
     try{$ps.Stop()}catch{}
     try{$ps.Dispose()}catch{}
     try{$rs.Close()}catch{}
