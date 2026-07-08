@@ -1,5 +1,5 @@
 # ================================================================
-#  UNIVERSAL PC OPTIMIZER v15.9
+#  UNIVERSAL PC OPTIMIZER v15.10
 #  Works on: Windows 10 / 11 | All laptop/desktop brands
 #  PowerShell 5.1+  |  GUI + Live Command Log
 #  No DISM / No SFC / No Windows Update / No Winget (removed per request)
@@ -43,6 +43,14 @@
 #         NOTE: this is real-time rendered animation, not embedded video
 #         — a single portable .ps1 can't bundle an actual video file, so
 #         everything here is genuine WPF vector/physics animation instead.
+#  v15.10: upgraded 3D Objects removal to target InprocServer32 (the
+#          complete technique — the old version only cleared the parent
+#          key, incomplete on some builds); added Widgets/WebExperience
+#          removal, TaskbarEndTask, folder-view-template reset, and
+#          verbosestatus. All Explorer-dependent tweaks now restart
+#          explorer.exe ONCE at the end instead of repeatedly — several
+#          duplicate/broken-path tweaks from a pasted snippet were
+#          skipped since equivalents already existed correctly.
 #
 #  HOW TO RUN:
 #    Right-click this file -> "Run with PowerShell"
@@ -122,7 +130,7 @@ $sync = [Hashtable]::Synchronized(@{
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Universal PC Optimizer v15.9"
+    Title="Universal PC Optimizer v15.10"
     Height="1080" Width="1920"
     WindowStartupLocation="Manual"
     ResizeMode="CanMinimize"
@@ -506,7 +514,7 @@ $sync = [Hashtable]::Synchronized(@{
         <TextBlock x:Name="SplashTitle" Text="UNIVERSAL PC OPTIMIZER" Opacity="0"
                    FontSize="26" FontWeight="Bold" Foreground="White" FontFamily="Segoe UI"
                    HorizontalAlignment="Center" Margin="0,18,0,0"/>
-        <TextBlock x:Name="SplashSubtitle" Text="v15.9" Opacity="0"
+        <TextBlock x:Name="SplashSubtitle" Text="v15.10" Opacity="0"
                    FontSize="13" Foreground="#6FA8D8" FontFamily="Segoe UI Mono"
                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
         <TextBlock x:Name="SplashCredit" Text="Made by Veer Bhardwaj" Opacity="0"
@@ -1135,11 +1143,15 @@ $ps.Runspace=$rs
     L "REG: HiberbootEnabled=1 (fast startup - registry only)"
     R "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" "HiberbootEnabled" 1
 
-    L "REG: CLSID {86ca1aa0-...} default value cleared (Explorer namespace tweak)"
-    # Source: community registry-hacks guide. Sets the unnamed (Default)
-    # value of this CLSID key to an empty string. Must use String type —
-    # the default value of a registry key is always REG_SZ.
-    R "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}" "(default)" "" "String"
+    L "REG: 3D Objects removed from This PC (CLSID InprocServer32 cleared)"
+    # UPGRADED from an earlier version that only cleared the parent CLSID
+    # key's default value — that's incomplete on some builds. The correct,
+    # complete technique clears the InprocServer32 subkey's default value,
+    # which actually disables the shell folder registration. Both are
+    # String type since a registry key's default value is always REG_SZ.
+    $clsidPath = "HKCU:\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+    if(-not (Test-Path $clsidPath)){New-Item -Path $clsidPath -Force|Out-Null}
+    R $clsidPath "(default)" "" "String"
 
     L "bcdedit: useplatformtick=yes"
     & "$env:SystemRoot\System32\bcdedit.exe" /set useplatformtick yes 2>&1|Out-Null
@@ -1171,6 +1183,10 @@ $ps.Runspace=$rs
 
     L "GAMING: Removing Xbox Gaming Overlay app (actual uninstall, not just a disable)"
     Get-AppxPackage Microsoft.XboxGamingOverlay -ErrorAction SilentlyContinue |
+        Remove-AppxPackage -ErrorAction SilentlyContinue
+
+    L "REMOVE: Windows Widgets (WebExperience host app — actual uninstall)"
+    Get-AppxPackage *WebExperience* -ErrorAction SilentlyContinue |
         Remove-AppxPackage -ErrorAction SilentlyContinue
 
     # ── UI & RESPONSIVENESS TWEAKS ───────────────────────────────
@@ -1220,6 +1236,22 @@ $ps.Runspace=$rs
     R "HKCU:\Control Panel\Accessibility\StickyKeys"       "Flags" "506" "String"
     R "HKCU:\Control Panel\Accessibility\ToggleKeys"       "Flags" "58"  "String"
     R "HKCU:\Control Panel\Accessibility\Keyboard Response" "Flags" "122" "String"
+
+    L "REG: TaskbarEndTask=1 (adds 'End Task' to taskbar right-click menu)"
+    R "HKCU:\Software\Microsoft\Windows\CurrentVersion\DeveloperSettings" "TaskbarEndTask" 1
+
+    L "REG: Reset remembered per-folder view templates (all folders go back"
+    L "to Explorer's default view instead of thousands of individually"
+    L "cached ones — resets view/layout memory only, no files touched)"
+    $shellBagsPath = "HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell"
+    if(-not (Test-Path $shellBagsPath)){New-Item -Path $shellBagsPath -Force|Out-Null}
+    R $shellBagsPath "FolderType" "NotSpecified" "String"
+
+    L "EXPLORER: Restarting explorer.exe once so all the Explorer-dependent"
+    L "tweaks above (hidden files, extensions, This PC, 3D Objects, taskbar"
+    L "icons, folder view reset) take visible effect immediately"
+    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 400
 
     # ── POWER PLAN FINE-TUNING (AC power only — battery-mode behavior
     #    on laptops is left untouched on purpose) ────────────────────
@@ -1285,6 +1317,10 @@ $ps.Runspace=$rs
         "PublishUserActivities"=0
         "UploadUserActivities"=0
     }
+
+    L "REG: verbosestatus=1 (detailed boot/shutdown/login status messages,"
+    L "useful for diagnosing what's actually happening during a slow boot)"
+    R "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" "verbosestatus" 1
 
     L "REG: CEIP + Feedback + Background apps disabled"
     R "HKLM:\SOFTWARE\Microsoft\SQMClient\Windows" "CEIPEnable" 0
