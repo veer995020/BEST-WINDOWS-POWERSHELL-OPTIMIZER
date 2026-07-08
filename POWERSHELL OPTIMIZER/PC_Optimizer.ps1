@@ -1,5 +1,5 @@
 # ================================================================
-#  UNIVERSAL PC OPTIMIZER v15.10
+#  UNIVERSAL PC OPTIMIZER v15.11
 #  Works on: Windows 10 / 11 | All laptop/desktop brands
 #  PowerShell 5.1+  |  GUI + Live Command Log
 #  No DISM / No SFC / No Windows Update / No Winget (removed per request)
@@ -51,6 +51,16 @@
 #          explorer.exe ONCE at the end instead of repeatedly — several
 #          duplicate/broken-path tweaks from a pasted snippet were
 #          skipped since equivalents already existed correctly.
+#  v15.11: audited for non-applying tweaks and outdated cmdlets against
+#          PowerShell/Windows documentation. Added the modern
+#          ExcludeWUDriversInQualityUpdate policy (the older
+#          DriverSearching key only affects Device Manager's manual
+#          wizard, not actual Windows Update driver delivery). Upgraded
+#          ECN from netsh-only to native Set-NetTCPSetting first, netsh
+#          fallback — matching the pattern already used for AutoTuning
+#          and RSS. Verified every executed command has a matching
+#          pipeline/log entry — audit found the coverage already
+#          complete, no gaps.
 #
 #  HOW TO RUN:
 #    Right-click this file -> "Run with PowerShell"
@@ -101,10 +111,10 @@ if (-not $IsAdmin) {
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Windows.Forms
 
 # ── DETECT SYSTEM INFO ──────────────────────────────────────────
-$OSCaption  = (Get-WmiObject Win32_OperatingSystem).Caption
-$OSBuild    = (Get-WmiObject Win32_OperatingSystem).BuildNumber
-$PCMaker    = (Get-WmiObject Win32_ComputerSystem).Manufacturer
-$PCModel    = (Get-WmiObject Win32_ComputerSystem).Model
+$OSCaption  = (Get-CimInstance Win32_OperatingSystem).Caption
+$OSBuild    = (Get-CimInstance Win32_OperatingSystem).BuildNumber
+$PCMaker    = (Get-CimInstance Win32_ComputerSystem).Manufacturer
+$PCModel    = (Get-CimInstance Win32_ComputerSystem).Model
 $Is11       = [int]$OSBuild -ge 22000
 $OSLabel    = if ($Is11) { "Windows 11" } else { "Windows 10" }
 
@@ -130,7 +140,7 @@ $sync = [Hashtable]::Synchronized(@{
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Universal PC Optimizer v15.10"
+    Title="Universal PC Optimizer v15.11"
     Height="1080" Width="1920"
     WindowStartupLocation="Manual"
     ResizeMode="CanMinimize"
@@ -514,7 +524,7 @@ $sync = [Hashtable]::Synchronized(@{
         <TextBlock x:Name="SplashTitle" Text="UNIVERSAL PC OPTIMIZER" Opacity="0"
                    FontSize="26" FontWeight="Bold" Foreground="White" FontFamily="Segoe UI"
                    HorizontalAlignment="Center" Margin="0,18,0,0"/>
-        <TextBlock x:Name="SplashSubtitle" Text="v15.10" Opacity="0"
+        <TextBlock x:Name="SplashSubtitle" Text="v15.11" Opacity="0"
                    FontSize="13" Foreground="#6FA8D8" FontFamily="Segoe UI Mono"
                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
         <TextBlock x:Name="SplashCredit" Text="Made by Veer Bhardwaj" Opacity="0"
@@ -1047,6 +1057,22 @@ $ps.Runspace=$rs
         }catch{}
     }
 
+    # Disable a scheduled task via the modern ScheduledTasks module cmdlet
+    # (Microsoft's documented replacement for schtasks.exe /Change /Disable —
+    # returns typed objects, integrates with -ErrorAction, no console-tool
+    # dependency). Falls back to schtasks.exe only if the cmdlet is
+    # unavailable for some reason — same fallback pattern already used for
+    # Set-NetTCPSetting/Set-NetOffloadGlobalSetting elsewhere in this script.
+    function DST([string]$path,[string]$name){
+        try{
+            Disable-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction Stop | Out-Null
+            L "Disable-ScheduledTask -TaskPath '$path' -TaskName '$name'"
+        }catch{
+            & "$env:SystemRoot\System32\schtasks.exe" /Change /TN "$path$name" /Disable 2>&1|Out-Null
+            L "schtasks.exe fallback: '$path$name' (task may not exist on this build/edition — safe no-op either way)"
+        }
+    }
+
     Start-Sleep -Milliseconds 500
     $sync.StatusMsg = "Detected: $($sync.OSLabel) | $($sync.PCMaker) $($sync.PCModel)"
 
@@ -1376,13 +1402,10 @@ $ps.Runspace=$rs
         "SilentInstalledAppsEnabled"       = 0
     }
 
-    L "schtasks: Disable telemetry-adjacent compatibility-data tasks"
-    & "$env:SystemRoot\System32\schtasks.exe" /Change /TN `
-        "\Microsoft\Windows\Application Experience\Microsoft Compatibility Appraiser" `
-        /Disable 2>&1|Out-Null
-    & "$env:SystemRoot\System32\schtasks.exe" /Change /TN `
-        "\Microsoft\Windows\Application Experience\ProgramDataUpdater" `
-        /Disable 2>&1|Out-Null
+    L "Disable-ScheduledTask: telemetry-adjacent compatibility-data tasks"
+    L "(upgraded from schtasks.exe to the native ScheduledTasks module cmdlet)"
+    DST "\Microsoft\Windows\Application Experience\" "Microsoft Compatibility Appraiser"
+    DST "\Microsoft\Windows\Application Experience\" "ProgramDataUpdater"
 
     L "REG: Delivery Optimization P2P sharing disabled"
     R "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization" "DODownloadMode" 0
@@ -1406,7 +1429,15 @@ $ps.Runspace=$rs
     R "HKLM:\Software\Policies\Microsoft\Windows\StorageSense" "DisableInventory" 1
 
     L "REG: Automatic driver updates via Windows Update disabled"
+    # This older key only affects Device Manager's manual "Search
+    # automatically for updated driver software" wizard — it does NOT
+    # reliably stop drivers arriving through automatic Windows Update.
     R "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\DriverSearching" "DontSearchWindowsUpdate" 1
+
+    L "REG: ExcludeWUDriversInQualityUpdate=1 (modern policy — actually"
+    L "blocks drivers from automatic Windows Update delivery, not just"
+    L "the Device Manager wizard the older key above only covers)"
+    R "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate" "ExcludeWUDriversInQualityUpdate" 1
 
     L "SECURITY: Remote Desktop (RDP) incoming connections disabled"
     R "HKLM:\System\CurrentControlSet\Control\Terminal Server" "fDenyTSConnections" 1
@@ -1491,11 +1522,11 @@ $ps.Runspace=$rs
     L "schtasks: Disable Defender scheduled scans (real-time protection stays ON)"
     L "NOTE: schtasks silently no-ops on any task name that doesn't exist on this"
     L "build/edition — no error, no crash, just skipped. Safe either way."
-    @("\Microsoft\Windows\Windows Defender\Windows Defender Scheduled Scan",
-      "\Microsoft\Windows\Windows Defender\Windows Defender Cache Maintenance",
-      "\Microsoft\Windows\Windows Defender\Windows Defender Cleanup",
-      "\Microsoft\Windows\Windows Defender\Windows Defender Verification") |
-    ForEach-Object{& "$env:SystemRoot\System32\schtasks.exe" /Change /TN $_ /Disable 2>&1|Out-Null}
+    L "(upgraded from schtasks.exe to the native Disable-ScheduledTask cmdlet)"
+    DST "\Microsoft\Windows\Windows Defender\" "Windows Defender Scheduled Scan"
+    DST "\Microsoft\Windows\Windows Defender\" "Windows Defender Cache Maintenance"
+    DST "\Microsoft\Windows\Windows Defender\" "Windows Defender Cleanup"
+    DST "\Microsoft\Windows\Windows Defender\" "Windows Defender Verification"
 
     $sync.StepsDone[3]=$true
     S 3 87 "Memory & CPU tuning done."
@@ -1518,8 +1549,13 @@ $ps.Runspace=$rs
     try{Set-NetOffloadGlobalSetting -ReceiveSideScaling Enabled -EA Stop|Out-Null}
     catch{& netsh int tcp set global rss=enabled 2>&1|Out-Null;L "netsh fallback: rss=enabled"}
 
-    L "netsh: ECN enabled"
-    & netsh int tcp set global ecncapability=enabled 2>&1|Out-Null
+    L "Set-NetTCPSetting EcnCapability=Enabled"
+    # UPGRADED from a netsh-only call — Set-NetTCPSetting has supported
+    # -EcnCapability natively since the same NetTCPIP module version as
+    # the AutoTuning/RSS cmdlets above, so this now follows the same
+    # native-cmdlet-first, netsh-fallback pattern as both of those.
+    try{Set-NetTCPSetting -SettingName InternetCustom -EcnCapability Enabled -EA Stop|Out-Null}
+    catch{& netsh int tcp set global ecncapability=enabled 2>&1|Out-Null;L "netsh fallback: ecncapability=enabled"}
 
     L "REG: QoS 20% reserve removed"
     R "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Psched" "NonBestEffortLimit" 0
